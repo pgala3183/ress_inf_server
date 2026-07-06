@@ -23,6 +23,7 @@ class QueuedRequest:
     priority: Priority
     max_tokens: int = 50
     enqueue_time: float = field(default_factory=time.monotonic)
+    admitted: bool = False
 
 
 class RequestQueue:
@@ -30,6 +31,7 @@ class RequestQueue:
         self._interactive: deque[QueuedRequest] = deque()
         self._batch: deque[QueuedRequest] = deque()
         self._condition = asyncio.Condition()
+        self._draining = False
 
     async def enqueue(
         self,
@@ -46,6 +48,23 @@ class RequestQueue:
                 self._batch.append(item)
             self._condition.notify_all()
 
+    def set_draining(self, draining: bool) -> None:
+        self._draining = draining
+
+    async def notify_draining(self) -> None:
+        async with self._condition:
+            self._draining = True
+            self._condition.notify_all()
+
+    async def drain_all_pending(self) -> list[QueuedRequest]:
+        """Remove and return all not-yet-admitted requests (for peer migration)."""
+        async with self._condition:
+            pending = [item for item in list(self._interactive) + list(self._batch) if not item.admitted]
+            self._interactive.clear()
+            self._batch.clear()
+            self._condition.notify_all()
+            return pending
+
     def _promotion_threshold_ms(self) -> float:
         return BATCH_SLA_MS * PROMOTION_FRACTION
 
@@ -56,11 +75,7 @@ class RequestQueue:
         return item.priority == "batch" and self._waiting_ms(item) >= self._promotion_threshold_ms()
 
     def _has_ready(self) -> bool:
-        if self._interactive:
-            return True
-        if self._batch:
-            return True
-        return False
+        return bool(self._interactive or self._batch)
 
     def _collect_batch(self, max_size: int) -> list[QueuedRequest]:
         if max_size <= 0:
@@ -84,34 +99,40 @@ class RequestQueue:
         while self._batch and len(batch) < max_size:
             batch.append(self._batch.popleft())
 
+        for item in batch:
+            item.admitted = True
         return batch
 
     async def try_collect_batch(self, max_size: int) -> list[QueuedRequest]:
         """Non-blocking priority-aware drain (returns [] when queue is empty)."""
         async with self._condition:
-            if not self._has_ready():
+            if self._draining or not self._has_ready():
                 return []
             return self._collect_batch(max_size)
 
     async def get_next_batch(self, max_size: int) -> list[QueuedRequest]:
         """Block until work is available, then drain by priority rules."""
         async with self._condition:
-            await self._condition.wait_for(self._has_ready)
+            await self._condition.wait_for(lambda: self._has_ready() or self._draining)
+            if self._draining and not self._has_ready():
+                return []
             return self._collect_batch(max_size)
 
     async def pull_batch(self, max_size: int, wait_ms: float) -> list[QueuedRequest]:
         """Collect a batch, waiting up to wait_ms after the first items for more."""
         batch = await self.get_next_batch(max_size)
-        if len(batch) >= max_size:
+        if not batch or len(batch) >= max_size:
             return batch
 
         deadline = time.monotonic() + (wait_ms / 1000.0)
         while len(batch) < max_size:
             remaining = deadline - time.monotonic()
-            if remaining <= 0:
+            if remaining <= 0 or self._draining:
                 break
 
             async with self._condition:
+                if self._draining:
+                    break
                 extra = self._collect_batch(max_size - len(batch))
                 if extra:
                     batch.extend(extra)
@@ -122,7 +143,8 @@ class RequestQueue:
                 except asyncio.TimeoutError:
                     break
 
-                batch.extend(self._collect_batch(max_size - len(batch)))
+                if not self._draining:
+                    batch.extend(self._collect_batch(max_size - len(batch)))
 
         return batch
 

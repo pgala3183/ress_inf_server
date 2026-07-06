@@ -69,10 +69,12 @@ class BatchingScheduler:
         self._queue = queue
         self._worker = worker
         self._generative = generative
-        self._max_batch_size = max_batch_size or MAX_BATCH_SIZE
-        self._max_wait_ms = max_wait_ms or MAX_WAIT_MS
+        self._max_batch_size = max_batch_size or int(os.environ.get("MAX_BATCH_SIZE", str(MAX_BATCH_SIZE)))
+        self._max_wait_ms = max_wait_ms or float(os.environ.get("MAX_WAIT_MS", str(MAX_WAIT_MS)))
         self._max_slots = max_slots or MAX_SLOTS
         self._task: asyncio.Task[None] | None = None
+        self._drain_mode = False
+        self._inflight_count = 0
 
     async def start(self) -> None:
         if self._task is not None and not self._task.done():
@@ -91,6 +93,21 @@ class BatchingScheduler:
             pass
         self._task = None
 
+    async def enter_drain_mode(self) -> None:
+        """Stop pulling new queue work; let admitted batches/slots finish."""
+        self._drain_mode = True
+        await self._queue.notify_draining()
+        logger.info('{"event":"scheduler_entered_drain_mode"}')
+
+    async def wait_idle(self) -> None:
+        """Block until all admitted work has completed."""
+        while self._inflight_count > 0:
+            await asyncio.sleep(0.05)
+
+    @property
+    def inflight_count(self) -> int:
+        return self._inflight_count
+
     # ------------------------------------------------------------------
     # Phase 2–3: static batching (classification)
     # ------------------------------------------------------------------
@@ -98,14 +115,20 @@ class BatchingScheduler:
     async def _run_static(self) -> None:
         loop = asyncio.get_running_loop()
         while True:
+            if self._drain_mode and self._inflight_count == 0:
+                break
+
             batch = await self._queue.pull_batch(self._max_batch_size, self._max_wait_ms)
             if not batch:
+                if self._drain_mode:
+                    break
                 continue
 
             batch_size.observe(len(batch))
             queue_depth.set(self._queue.depth)
 
             texts = [item.text for item in batch]
+            self._inflight_count += len(batch)
             try:
                 results = await loop.run_in_executor(None, self._worker.run_batch, texts)
                 for item, result in zip(batch, results, strict=True):
@@ -116,6 +139,8 @@ class BatchingScheduler:
                 for item in batch:
                     if not item.future.done():
                         item.future.set_exception(exc)
+            finally:
+                self._inflight_count -= len(batch)
 
     # ------------------------------------------------------------------
     # Phase 4: continuous batching (generative, slot pool)
@@ -128,6 +153,9 @@ class BatchingScheduler:
         slots: list[_ActiveSlot | None] = [None] * self._max_slots
 
         while True:
+            if self._drain_mode and self._inflight_count == 0:
+                break
+
             # --- Step 1: finish sequences, resolve Futures, free slots ---------
             for index, slot in enumerate(slots):
                 if slot is None or not slot.state.finished:
@@ -138,16 +166,19 @@ class BatchingScheduler:
             free_count = sum(1 for slot in slots if slot is None)
             queue_depth.set(self._queue.depth)
 
-            # --- Step 2: fill every free slot from the priority queue ------------
-            if free_count > 0:
+            # --- Step 2: fill free slots (skip while draining) -------------------
+            if free_count > 0 and not self._drain_mode:
                 await self._fill_free_slots(slots)
 
             active = [slot for slot in slots if slot is not None and not slot.state.finished]
 
             if not active:
-                # Entire pool idle — block until at least one request arrives.
+                if self._drain_mode:
+                    break
                 await self._assign_blocked_request(slots)
                 continue
+
+            self._inflight_count = len(active)
 
             active_slots_used.set(len(active))
 
@@ -175,8 +206,9 @@ class BatchingScheduler:
             if STEP_INTERVAL_S > 0:
                 await asyncio.sleep(STEP_INTERVAL_S)
             else:
-                # Yield so HTTP handlers and queue producers can progress.
                 await asyncio.sleep(0)
+
+        self._inflight_count = 0
 
     async def _fill_free_slots(self, slots: list[_ActiveSlot | None]) -> None:
         """Pull as many queued requests as we have free slots (non-blocking)."""
@@ -192,6 +224,8 @@ class BatchingScheduler:
 
     async def _assign_blocked_request(self, slots: list[_ActiveSlot | None]) -> None:
         """Block until work exists, then occupy exactly one newly freed slot."""
+        if self._drain_mode:
+            return
         batch = await self._queue.get_next_batch(1)
         for request in batch:
             slot_index = next(i for i, slot in enumerate(slots) if slot is None)

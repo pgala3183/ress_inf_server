@@ -129,6 +129,27 @@ kubectl apply -f k8s/deployment-ondemand.yaml \
 Why the standard pool comes first: GKE needs non-preemptible nodes for system
 DaemonSets before Spot GPU nodes are added. See `docs/architecture.md` → Reliability.
 
+### Demo: simulated Spot preemption (Phase 6)
+
+```bash
+# Terminal 1 — peer instance (stable on-demand target for migration)
+PEER_URLS= uvicorn server.api:app --port 8001
+
+# Terminal 2 — Spot instance with simulation + peer list
+PEER_URLS=http://127.0.0.1:8001 \
+SIMULATE_PREEMPTION_AFTER_SECONDS=30 \
+DRAIN_EXIT_ON_COMPLETE=0 \
+uvicorn server.api:app --port 8000
+
+# Terminal 3 — load while watching structured JSON drain logs
+python benchmarks/static_batching_latency.py
+# Or: kubectl delete pod <spot-pod>   (same drain path via preStop + SIGTERM)
+```
+
+Watch for log events: `drain_state_transition`, `pending_queue_migrated`,
+`scheduler_idle`, `drain_orchestration_complete`. Metrics at `/metrics`:
+`requests_dropped_total` (should stay 0), `requests_migrated_total`, `drain_duration_seconds`.
+
 ## Project Layout
 
 ```

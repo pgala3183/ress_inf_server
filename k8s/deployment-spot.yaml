@@ -17,23 +17,19 @@ spec:
         app: resilient-inference-server
         node-pool: spot
     spec:
-      # GKE Spot VM node pool — preemptible, cost-optimized inference capacity.
       nodeSelector:
         cloud.google.com/gke-spot: "true"
       tolerations:
-        # Required to schedule onto GKE Spot nodes.
         - key: cloud.google.com/gke-spot
           operator: Equal
           value: "true"
           effect: NoSchedule
-        # Standard GPU node taint on GKE GPU pools.
         - key: nvidia.com/gpu
           operator: Exists
           effect: NoSchedule
       # GKE Spot preemption window (see docs/architecture.md, Reliability):
       #   ~30 seconds total — ~15s for the workload pod and ~15s reserved for
-      #   critical system pods. Our Phase 6 drain logic must finish comfortably
-      #   inside this budget; 25s grace leaves headroom for kubelet overhead.
+      #   critical system pods. Drain logic must finish inside this budget.
       terminationGracePeriodSeconds: 25
       containers:
         - name: inference-server
@@ -45,6 +41,13 @@ spec:
           env:
             - name: HF_HOME
               value: /app/.cache/huggingface
+            # Comma-separated peer base URLs for queue migration during drain.
+            # Example: http://resilient-inference-server/resilient-inference-server-ondemand:80
+            - name: PEER_URLS
+              value: "http://resilient-inference-server"
+            # Demo locally without GCE metadata (unset in production):
+            # - name: SIMULATE_PREEMPTION_AFTER_SECONDS
+            #   value: "120"
           readinessProbe:
             httpGet:
               path: /healthz
@@ -64,11 +67,9 @@ spec:
                   - /bin/sh
                   - -c
                   - |
-                    # Phase 6 placeholder: drain in-flight requests, flush metrics,
-                    # and checkpoint state before the Spot VM is reclaimed.
-                    # Must complete well before terminationGracePeriodSeconds (25s).
-                    echo "preStop drain placeholder — implement in Phase 6"
-                    sleep 1
+                    # Phase 6: trigger the same drain path as GCE Spot preemption / SIGTERM.
+                    # Blocks until DRAINED so in-flight work completes and queued requests migrate.
+                    curl -sf -X POST http://127.0.0.1:8000/internal/drain
           resources:
             requests:
               cpu: 500m
@@ -76,7 +77,3 @@ spec:
             limits:
               cpu: "2"
               memory: 2Gi
-          # GKE GPU Spot pool example (uncomment for real GPU nodes):
-          # resources:
-          #   limits:
-          #     nvidia.com/gpu: 1

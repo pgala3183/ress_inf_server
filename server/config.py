@@ -27,6 +27,9 @@ DEFAULT_MAX_TOKENS: int = int(os.environ.get("DEFAULT_MAX_TOKENS", "50"))
 # increase slightly to make slot-reuse timing assertions more reliable.
 STEP_INTERVAL_S: float = float(os.environ.get("STEP_INTERVAL_S", "0"))
 
+# Phase 6 — graceful drain / Spot preemption
+DRAIN_RETRY_AFTER_SECONDS: int = int(os.environ.get("DRAIN_RETRY_AFTER_SECONDS", "30"))
+
 
 def set_generative(enabled: bool) -> None:
     """Override generative mode at runtime (used by tests)."""

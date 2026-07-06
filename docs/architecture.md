@@ -39,16 +39,22 @@ workloads only.
 
 #### Spot preemption window and graceful shutdown (Phase 6)
 
-GKE Spot VM preemption gives Pods roughly **30 seconds** total:
+When GCE Spot preemption is detected (metadata poll) or Kubernetes sends
+SIGTERM / `preStop`, the server enters **DRAINING**:
 
-- ~**15 seconds** for the workload Pod termination grace period
-- ~**15 seconds** reserved for critical system Pods
+1. **503 + Retry-After** on all new `/predict` requests (load balancer stops sending traffic)
+2. **In-flight** work (admitted batches / active slots) completes normally
+3. **Queued-but-not-admitted** requests are **forwarded to peers** listed in `PEER_URLS`
+4. State transitions to **DRAINED** and the process exits with code 0
 
-`deployment-spot.yaml` sets `terminationGracePeriodSeconds: 25` and a `preStop`
-hook placeholder. Phase 6 will implement request draining inside that window so
-in-flight inference completes (or is checkpointed) before the VM is reclaimed.
+Structured JSON logs (`resilient.drain`, `resilient.preemption`) record every
+transition for demo and debugging. Local testing:
 
-See `k8s/deployment-spot.yaml` and Phase 6 `preemption_listener.py`.
+```bash
+SIMULATE_PREEMPTION_AFTER_SECONDS=30 PEER_URLS=http://localhost:8001 uvicorn server.api:app
+```
+
+See `server/preemption_listener.py` and `POST /internal/drain`.
 
 ## Cost Optimization
 

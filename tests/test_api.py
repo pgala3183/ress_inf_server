@@ -13,6 +13,7 @@ async def test_healthz(client: AsyncClient) -> None:
     body = response.json()
     assert body["status"] == "ok"
     assert body["mode"] == "classification"
+    assert body["drain_state"] == "RUNNING"
 
 
 @pytest.mark.asyncio

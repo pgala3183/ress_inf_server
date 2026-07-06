@@ -37,6 +37,10 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /app/.cache/huggingface /app/.cache/huggingface
 COPY --from=builder /app/server /app/server
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
