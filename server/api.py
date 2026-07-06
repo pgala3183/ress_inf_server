@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 from contextlib import asynccontextmanager
+from typing import Literal
 
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
@@ -13,7 +14,7 @@ from starlette.responses import Response
 from server.batching_scheduler import BatchingScheduler
 from server.metrics import queue_depth, render_metrics, request_latency_seconds
 from server.model_worker import ModelWorker
-from server.request_queue import RequestQueue
+from server.request_queue import Priority, RequestQueue
 
 model_worker = ModelWorker()
 request_queue: RequestQueue | None = None
@@ -41,6 +42,7 @@ app = FastAPI(title="Resilient Inference Server", lifespan=lifespan)
 
 class PredictRequest(BaseModel):
     text: str = Field(..., min_length=1)
+    priority: Literal["interactive", "batch"] = "interactive"
 
 
 class PredictResponse(BaseModel):
@@ -59,14 +61,15 @@ async def predict(request: PredictRequest) -> PredictResponse:
     queue = _get_queue()
     started = time.perf_counter()
     future: asyncio.Future = asyncio.get_running_loop().create_future()
-    await queue.enqueue(request.text, future)
+    priority: Priority = request.priority
+    await queue.enqueue(request.text, future, priority)
     queue_depth.set(queue.depth)
 
     try:
         result = await future
         return PredictResponse(**result)
     finally:
-        request_latency_seconds.observe(time.perf_counter() - started)
+        request_latency_seconds.labels(priority=priority).observe(time.perf_counter() - started)
         queue_depth.set(queue.depth)
 
 

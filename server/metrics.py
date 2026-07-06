@@ -5,7 +5,8 @@ from prometheus_client import CONTENT_TYPE_LATEST, Gauge, Histogram, generate_la
 request_latency_seconds = Histogram(
     "request_latency_seconds",
     "End-to-end request latency in seconds",
-    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
+    labelnames=["priority"],
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 15.0),
 )
 
 batch_size = Histogram(
