@@ -168,27 +168,27 @@ Raw CSVs and graphs: `benchmarks/output/`.
 
 ### Latency vs batch size
 
-At **MAX_BATCH_SIZE=8**, steady throughput peaks at **47.4 req/s** with interactive p50 **306 ms** (vs **644 ms** at batch size 1).
+At **MAX_BATCH_SIZE=8**, steady throughput peaks at **53.7 req/s** with interactive p50 **286 ms** (vs **335 ms** at batch size 1).
 
 ![Latency vs batch size](benchmarks/output/latency_vs_batch_size.png)
 
 ### Preemption: zero dropped requests
 
-During **2,382** requests over 22 s with preemption at **t=8 s**: `requests_dropped_total = 0`. Success rate drops on the primary while it drains (503 responses); queued work migrates to the peer.
+During **3,043** requests over 22 s with preemption at **t=8 s**: `requests_dropped_total = 0`. Success rate drops on the primary while it drains (503 responses); queued work migrates to the peer.
 
 ![Preemption success rate over time](benchmarks/output/preemption_success_rate.png)
 
 ### Autoscaling signal
 
-Bursty spike drives **queue_depth** to **67**; implied replica count (HPA target 5/pod) scales to **5** within ~1 s, then recovers.
+Bursty spike drives **queue_depth** to **14**; implied replica count (HPA target 5/pod) scales to **3** within ~4 s, then recovers.
 
 ![Queue depth and implied replicas during load spike](benchmarks/output/autoscaling_queue_replicas.png)
 
 | Scenario | Throughput | Interactive p50 | Est. $/1k inferences |
-|----------|------------|-------------------|----------------------|
-| Steady, batch=8 | 47.4 req/s | 306 ms | $0.000113 |
-| Bursty, batch=8 | 23.9 req/s | 58 ms | $0.000224 |
-| Bursty, batch=1 | 16.9 req/s | 294 ms | $0.000317 |
+|----------|------------|-----------------|----------------------|
+| Steady, batch=8 | 53.7 req/s | 286 ms | $0.000099 |
+| Bursty, batch=8 | 24.0 req/s | 47 ms | $0.000223 |
+| Bursty, batch=1 | 23.2 req/s | 56 ms | $0.000231 |
 
 Pricing constants (Spot 0.30× on-demand): [`benchmarks/pricing.py`](benchmarks/pricing.py).
 

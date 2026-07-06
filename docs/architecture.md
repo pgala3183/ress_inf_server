@@ -95,7 +95,7 @@ On GCE metadata preemption, SIGTERM, or `preStop`:
 
 | Metric | Value |
 |--------|-------|
-| Total requests during 22 s load | **2,382** |
+| Total requests during 22 s load | **3,043** |
 | `requests_dropped_total` | **0** |
 | Success rate before t=8 s | **100%** |
 | Success rate t=8–21 s (primary draining) | **0%** (503 to primary — clients must retry/peers) |
@@ -110,10 +110,11 @@ During a bursty load spike (`benchmarks/run_full_suite.py` autoscaling scenario)
 | Time (s) | queue_depth | Implied replicas (target=5) |
 |----------|-------------|----------------------------|
 | 0–3 | 0–2 | 1 |
-| 3.8 | **55** | **5** (max) |
-| 4.8 | 4 | 1 (recovery) |
+| 4.4 | **14** | **3** |
+| 12.9 | 10 | 2 |
+| 16+ | 0–4 | 1 (recovery) |
 
-Peak **queue_depth = 67**; implied replica count tracks backlog within ~1 s. See `benchmarks/output/autoscaling_queue_replicas.png`.
+Peak **queue_depth = 14**; implied replica count reaches **3** within ~4 s. See `benchmarks/output/autoscaling_queue_replicas.png`.
 
 ---
 
@@ -138,12 +139,12 @@ Estimated cost uses published GCE multipliers in `benchmarks/pricing.py` (n1-sta
 
 | Configuration | Throughput | Est. cost / 1k inferences |
 |---------------|------------|---------------------------|
-| `MAX_BATCH_SIZE=8`, steady | **47.4 req/s** | **$0.000113** |
-| `MAX_BATCH_SIZE=8`, bursty | 23.9 req/s | $0.000224 |
-| `MAX_BATCH_SIZE=1`, steady | 25.8 req/s | $0.000207 |
-| `MAX_BATCH_SIZE=32`, steady | 41.8 req/s | $0.000128 |
+| `MAX_BATCH_SIZE=8`, steady | **53.7 req/s** | **$0.000099** |
+| `MAX_BATCH_SIZE=8`, bursty | 24.0 req/s | $0.000223 |
+| `MAX_BATCH_SIZE=1`, bursty | 23.2 req/s | $0.000231 |
+| `MAX_BATCH_SIZE=32`, steady | 38.8 req/s | $0.000138 |
 
-**Batch size 8** delivers the best steady throughput and lowest cost per 1k requests in our sweep. Batch size 1 under bursty load drops interactive SLA compliance to **44.6%** (vs **95.3%** at batch size 8).
+**Batch size 8** delivers the best steady throughput and lowest cost per 1k requests in our sweep. Batch size **1** under bursty load drops interactive SLA compliance to **89.4%** (vs **99.4%** at batch size 8).
 
 ---
 
@@ -155,9 +156,9 @@ Requests wait up to `MAX_WAIT_MS` (default 10 ms) to fill batches of `MAX_BATCH_
 
 | MAX_BATCH_SIZE | Throughput | Interactive p50 | Interactive p99 |
 |----------------|------------|-----------------|-----------------|
-| 1 | 25.8 req/s | 644 ms | 989 ms |
-| 8 | **47.4 req/s** | **306 ms** | 462 ms |
-| 32 | 41.8 req/s | 334 ms | 458 ms |
+| 1 | 41.3 req/s | 335 ms | 479 ms |
+| 8 | **53.7 req/s** | **286 ms** | 410 ms |
+| 32 | 38.8 req/s | 349 ms | 539 ms |
 
 Throughput peaks at batch size **8**; batch size **1** roughly doubles p50 latency. See `benchmarks/output/latency_vs_batch_size.png` and `throughput_vs_batch_size.png`.
 
@@ -165,9 +166,9 @@ Under **bursty** load (723 requests, ~30 s):
 
 | MAX_BATCH_SIZE | Interactive p50 | Interactive p99 | Interactive SLA (200 ms) |
 |----------------|-----------------|-----------------|--------------------------|
-| 1 | 294 ms | 2,059 ms | **44.6%** |
-| 8 | **58 ms** | **438 ms** | **95.3%** |
-| 32 | **43 ms** | 269 ms | **97.1%** |
+| 1 | 56 ms | 462 ms | **89.4%** |
+| 8 | **47 ms** | **173 ms** | **99.4%** |
+| 32 | **42 ms** | 115 ms | **100%** |
 
 ### SLA-aware priority scheduling (Phase 3)
 
@@ -177,10 +178,10 @@ Interactive (200 ms SLA) is preferred over batch (5,000 ms), with batch promotio
 
 | Mode | Interactive SLA | Batch SLA | Interactive p99 |
 |------|-----------------|-----------|-----------------|
-| Priority **on** | 96.6% | 100% | 267 ms |
-| Priority **off** (FIFO) | 98.6% | 100% | 214 ms |
+| Priority **on** | 100% | 100% | 68 ms |
+| Priority **off** (FIFO) | 100% | 100% | 66 ms |
 
-Under this workload mix (~70% interactive), FIFO slightly edges priority on headline SLA — but priority scheduling protects interactive tail latency when batch floods the queue (Phase 3 unit tests and mixed-priority benchmarks). See `benchmarks/output/sla_compliance.png`.
+Under this workload mix (~70% interactive), both modes meet SLA; priority scheduling shows its value when batch traffic dominates queue depth (see Phase 3 unit tests). See `benchmarks/output/sla_compliance.png`.
 
 Toggle: `PRIORITY_SCHEDULING=0`.
 
@@ -198,7 +199,7 @@ Metrics: `active_slots_used`, `time_to_first_token_seconds`.
 
 ### Resource utilization under load
 
-During bursty batch-size-8 run: **avg CPU 86.7%**, **avg GPU 32.7%**, peak **queue_depth 3** (single replica). Autoscaling scenario: CPU pegged at **100%**, GPU **30–36%**. See `benchmarks/output/utilization_over_time.png`.
+During bursty batch-size-8 run: **avg CPU 84.8%**, **avg GPU 31.5%**, peak **queue_depth 5** (single replica). Autoscaling scenario: CPU pegged at **100%**, GPU **30–35%**, peak queue_depth **14**. See `benchmarks/output/utilization_over_time.png`.
 
 ---
 
