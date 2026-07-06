@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: resilient-inference-server
+  labels:
+    app: resilient-inference-server
+spec:
+  type: ClusterIP
+  selector:
+    # Matches both on-demand and Spot Deployments — unified inference endpoint.
+    app: resilient-inference-server
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

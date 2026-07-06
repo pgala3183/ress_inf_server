@@ -1,0 +1,22 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: resilient-inference-server-hpa
+  labels:
+    app: resilient-inference-server
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: resilient-inference-server-ondemand
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    # Placeholder — Phase 7 will replace CPU target with custom Prometheus
+    # metrics (queue_depth, active_slots_used, request_latency_seconds).
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

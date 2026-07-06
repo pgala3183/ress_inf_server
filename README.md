@@ -39,8 +39,8 @@ curl -X POST http://localhost:8000/generate \
 ### Docker
 
 ```bash
-docker build -t resilient-inference-server .
-docker run --rm -p 8000:8000 resilient-inference-server
+docker build -t resilient-inference-server:latest .
+docker run --rm -p 8000:8000 resilient-inference-server:latest
 ```
 
 Visit `http://localhost:8000/healthz` to verify the server is running.
@@ -50,6 +50,84 @@ curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
   -d '{"text": "I love this product"}'
 ```
+
+## Kubernetes Deployment
+
+Manifests live in `k8s/`. Two paths — pick one:
+
+### Path A — Local kind cluster (development / demo, no GCP billing)
+
+Requires [kind](https://kind.sigs.k8s.io/) and kubectl.
+
+```bash
+# Build and load the image into kind
+docker build -t resilient-inference-server:latest .
+kind create cluster --name resilient-inf --config k8s/kind/cluster-config.yaml
+kind load docker-image resilient-inference-server:latest --name resilient-inf
+
+# Apply manifests (Spot taints are mocked on the second worker node)
+kubectl apply -f k8s/deployment-ondemand.yaml \
+               -f k8s/deployment-spot.yaml \
+               -f k8s/service.yaml \
+               -f k8s/hpa.yaml
+
+kubectl get pods -o wide          # one pod per pool
+kubectl port-forward svc/resilient-inference-server 8000:80
+curl http://localhost:8000/healthz
+```
+
+Teardown: `kind delete cluster --name resilient-inf`
+
+See also `k8s/kind/README.md`. minikube works similarly — build locally, set
+`imagePullPolicy: Never`, and label/taint nodes to mimic Spot.
+
+### Path B — GKE with on-demand + Spot GPU node pools (production-shaped)
+
+Requires a GCP project with billing enabled.
+
+```bash
+# 1. Create the cluster (single zone for demo; expand for prod)
+gcloud container clusters create resilient-inf \
+  --zone us-central1-a \
+  --num-nodes 1 \
+  --machine-type e2-standard-4 \
+  --node-labels node-pool=ondemand
+
+# 2. Add a standard on-demand GPU pool (stable baseline — create BEFORE Spot GPU)
+gcloud container node-pools create gpu-ondemand \
+  --cluster resilient-inf \
+  --zone us-central1-a \
+  --machine-type n1-standard-4 \
+  --accelerator type=nvidia-tesla-t4,count=1 \
+  --num-nodes 1 \
+  --node-labels node-pool=ondemand \
+  --node-taints nvidia.com/gpu=present:NoSchedule
+
+# 3. Add a Spot GPU pool for cost-efficient burst capacity
+gcloud container node-pools create gpu-spot \
+  --cluster resilient-inf \
+  --zone us-central1-a \
+  --spot \
+  --machine-type n1-standard-4 \
+  --accelerator type=nvidia-tesla-t4,count=1 \
+  --num-nodes 1 \
+  --node-labels cloud.google.com/gke-spot=true,node-pool=spot \
+  --node-taints cloud.google.com/gke-spot=true:NoSchedule,nvidia.com/gpu=present:NoSchedule
+
+# 4. Push image to Artifact Registry, then deploy
+#    (adjust PROJECT_ID and uncomment nvidia.com/gpu limits in k8s/*.yaml)
+docker tag resilient-inference-server:latest \
+  us-central1-docker.pkg.dev/PROJECT_ID/resilient-inf/server:latest
+docker push us-central1-docker.pkg.dev/PROJECT_ID/resilient-inf/server:latest
+
+kubectl apply -f k8s/deployment-ondemand.yaml \
+               -f k8s/deployment-spot.yaml \
+               -f k8s/service.yaml \
+               -f k8s/hpa.yaml
+```
+
+Why the standard pool comes first: GKE needs non-preemptible nodes for system
+DaemonSets before Spot GPU nodes are added. See `docs/architecture.md` → Reliability.
 
 ## Project Layout
 

@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resilient-inference-server-ondemand
+  labels:
+    app: resilient-inference-server
+    node-pool: ondemand
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: resilient-inference-server
+      node-pool: ondemand
+  template:
+    metadata:
+      labels:
+        app: resilient-inference-server
+        node-pool: ondemand
+    spec:
+      # Schedule onto the standard (non-Spot) node pool.
+      nodeSelector:
+        node-pool: ondemand
+      containers:
+        - name: inference-server
+          image: resilient-inference-server:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: HF_HOME
+              value: /app/.cache/huggingface
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          # GKE GPU on-demand pool example (uncomment for real GPU nodes):
+          # resources:
+          #   limits:
+          #     nvidia.com/gpu: 1

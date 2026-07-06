@@ -12,7 +12,43 @@ This document follows the [Google Cloud Architecture Framework](https://cloud.go
 
 ## Reliability
 
-<!-- Phase TBD: preemption handling, graceful shutdown, request durability -->
+### On-demand + Spot node pool split
+
+The inference tier runs as **two Deployments** behind a single Service:
+
+| Deployment | Node pool | Purpose |
+|------------|-----------|---------|
+| `resilient-inference-server-ondemand` | Standard on-demand (`node-pool: ondemand`) | Stable baseline capacity; always available |
+| `resilient-inference-server-spot` | GKE Spot VMs (`cloud.google.com/gke-spot: "true"`) | Cost-efficient burst capacity; may be preempted |
+
+The Service selector (`app: resilient-inference-server`) load-balances across **both**
+pools, so clients see one endpoint while the cluster mixes stable and preemptible
+capacity.
+
+#### Why a non-GPU standard node pool must exist first
+
+Before adding a **GPU Spot** node pool on GKE, you must provision at least one
+**standard (non-GPU) node pool**. GKE requires this so critical system components
+— `kube-system` DaemonSets, networking agents, monitoring sidecars — are never
+scheduled onto preemptible GPU nodes that can disappear with ~30 seconds notice.
+
+If system pods were pinned to Spot GPU nodes, a preemption event could degrade
+cluster networking and control-plane health before workload drain logic even runs.
+The on-demand pool absorbs system overhead; Spot GPU pools carry inference
+workloads only.
+
+#### Spot preemption window and graceful shutdown (Phase 6)
+
+GKE Spot VM preemption gives Pods roughly **30 seconds** total:
+
+- ~**15 seconds** for the workload Pod termination grace period
+- ~**15 seconds** reserved for critical system Pods
+
+`deployment-spot.yaml` sets `terminationGracePeriodSeconds: 25` and a `preStop`
+hook placeholder. Phase 6 will implement request draining inside that window so
+in-flight inference completes (or is checkpointed) before the VM is reclaimed.
+
+See `k8s/deployment-spot.yaml` and Phase 6 `preemption_listener.py`.
 
 ## Cost Optimization
 

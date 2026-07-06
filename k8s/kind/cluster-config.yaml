@@ -1,0 +1,26 @@
+# kind cluster with two workers:
+#   - ondemand worker (no Spot taint)
+#   - spot worker (mock GKE Spot label + taint)
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: resilient-inf
+nodes:
+  - role: control-plane
+  - role: worker
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "node-pool=ondemand"
+  - role: worker
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "node-pool=spot,cloud.google.com/gke-spot=true"
+          taints:
+            - key: cloud.google.com/gke-spot
+              value: "true"
+              effect: NoSchedule

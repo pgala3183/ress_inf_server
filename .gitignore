@@ -28,6 +28,9 @@ venv/
 ENV/
 env/
 
+# Local tooling (kind binary, etc.)
+.tools/
+
 # Testing / coverage
 .pytest_cache/
 .coverage

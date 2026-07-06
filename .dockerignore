@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.git/
+benchmarks/output/
+*.md
+!README.md
+tests/
+load_test/
+agent-tools/
+terminals/
