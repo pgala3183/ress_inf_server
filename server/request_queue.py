@@ -21,6 +21,7 @@ class QueuedRequest:
     text: str
     future: asyncio.Future[dict[str, Any]]
     priority: Priority
+    max_tokens: int = 50
     enqueue_time: float = field(default_factory=time.monotonic)
 
 
@@ -35,8 +36,9 @@ class RequestQueue:
         text: str,
         future: asyncio.Future[dict[str, Any]],
         priority: Priority = "interactive",
+        max_tokens: int = 50,
     ) -> None:
-        item = QueuedRequest(text=text, future=future, priority=priority)
+        item = QueuedRequest(text=text, future=future, priority=priority, max_tokens=max_tokens)
         async with self._condition:
             if priority == "interactive":
                 self._interactive.append(item)
@@ -83,6 +85,13 @@ class RequestQueue:
             batch.append(self._batch.popleft())
 
         return batch
+
+    async def try_collect_batch(self, max_size: int) -> list[QueuedRequest]:
+        """Non-blocking priority-aware drain (returns [] when queue is empty)."""
+        async with self._condition:
+            if not self._has_ready():
+                return []
+            return self._collect_batch(max_size)
 
     async def get_next_batch(self, max_size: int) -> list[QueuedRequest]:
         """Block until work is available, then drain by priority rules."""

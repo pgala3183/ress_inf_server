@@ -22,6 +22,20 @@ pip install -r requirements.txt
 uvicorn server.api:app --reload
 ```
 
+### Generative mode (continuous batching)
+
+```bash
+# Option A: environment variable
+GENERATIVE=1 uvicorn server.api:app --reload
+
+# Option B: CLI flag
+python -m server.main --generative
+
+curl -X POST http://localhost:8000/generate \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Once upon a time", "max_tokens": 32}'
+```
+
 ### Docker
 
 ```bash
