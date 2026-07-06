@@ -1,0 +1,9 @@
+scenario,batch_size,traffic_pattern,throughput_rps,cost_per_1000_usd
+batch_sweep_steady,1,steady,41.33,0.000129
+batch_sweep_bursty,1,bursty,23.18,0.000231
+batch_sweep_steady,8,steady,53.71,9.9e-05
+batch_sweep_bursty,8,bursty,24.01,0.000223
+batch_sweep_steady,32,steady,38.81,0.000138
+batch_sweep_bursty,32,bursty,24.64,0.000217
+sla_priority_on,8,bursty,24.52,0.000218
+sla_priority_off,8,bursty,25.11,0.000213

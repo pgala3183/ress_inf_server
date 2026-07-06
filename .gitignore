@@ -64,10 +64,10 @@ dmypy.json
 # Docker
 *.log
 
-# Benchmark outputs
-benchmarks/output/
-benchmarks/**/*.png
-benchmarks/**/*.csv
+# Benchmark scratch outputs (summary PNGs/CSVs in benchmarks/output/ are committed for README)
+benchmarks/output/locust_*
+benchmarks/output/request_samples.csv
+benchmarks/output/utilization_timeseries.csv
 
 # OS
 .DS_Store

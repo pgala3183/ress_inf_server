@@ -22,3 +22,5 @@ httpx>=0.28.0
 
 # Load testing
 locust>=2.32.0
+matplotlib>=3.8.0
+psutil>=6.0.0

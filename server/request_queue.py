@@ -9,6 +9,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from server.config import PRIORITY_SCHEDULING
+
 Priority = Literal["interactive", "batch"]
 
 INTERACTIVE_SLA_MS = 200
@@ -23,6 +25,7 @@ class QueuedRequest:
     priority: Priority
     max_tokens: int = 50
     enqueue_time: float = field(default_factory=time.monotonic)
+    sequence: int = 0
     admitted: bool = False
 
 
@@ -32,6 +35,7 @@ class RequestQueue:
         self._batch: deque[QueuedRequest] = deque()
         self._condition = asyncio.Condition()
         self._draining = False
+        self._next_sequence = 0
 
     async def enqueue(
         self,
@@ -40,7 +44,14 @@ class RequestQueue:
         priority: Priority = "interactive",
         max_tokens: int = 50,
     ) -> None:
-        item = QueuedRequest(text=text, future=future, priority=priority, max_tokens=max_tokens)
+        self._next_sequence += 1
+        item = QueuedRequest(
+            text=text,
+            future=future,
+            priority=priority,
+            max_tokens=max_tokens,
+            sequence=self._next_sequence,
+        )
         async with self._condition:
             if priority == "interactive":
                 self._interactive.append(item)
@@ -81,6 +92,9 @@ class RequestQueue:
         if max_size <= 0:
             return []
 
+        if not PRIORITY_SCHEDULING:
+            return self._collect_batch_fifo(max_size)
+
         batch: list[QueuedRequest] = []
 
         promoted: list[QueuedRequest] = []
@@ -99,6 +113,18 @@ class RequestQueue:
         while self._batch and len(batch) < max_size:
             batch.append(self._batch.popleft())
 
+        for item in batch:
+            item.admitted = True
+        return batch
+
+    def _collect_batch_fifo(self, max_size: int) -> list[QueuedRequest]:
+        """FIFO drain ignoring priority (Phase 3 off baseline for benchmarks)."""
+        combined = list(self._interactive) + list(self._batch)
+        combined.sort(key=lambda item: (item.enqueue_time, item.sequence))
+        batch = combined[:max_size]
+        batch_ids = {id(item) for item in batch}
+        self._interactive = deque(item for item in self._interactive if id(item) not in batch_ids)
+        self._batch = deque(item for item in self._batch if id(item) not in batch_ids)
         for item in batch:
             item.admitted = True
         return batch
