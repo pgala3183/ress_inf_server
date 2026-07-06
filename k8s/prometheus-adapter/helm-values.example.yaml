@@ -1,0 +1,17 @@
+# Example Helm values for prometheus-community/prometheus-adapter.
+# Point prometheus.url at your GKE Managed Prometheus or in-cluster Prometheus.
+
+prometheus:
+  url: http://prometheus-kube-prometheus-prometheus.monitoring.svc
+  port: 9090
+
+rules:
+  existing: prometheus-adapter-config
+
+serviceAccount:
+  create: true
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi

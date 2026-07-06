@@ -30,6 +30,14 @@ STEP_INTERVAL_S: float = float(os.environ.get("STEP_INTERVAL_S", "0"))
 # Phase 6 — graceful drain / Spot preemption
 DRAIN_RETRY_AFTER_SECONDS: int = int(os.environ.get("DRAIN_RETRY_AFTER_SECONDS", "30"))
 
+# Phase 7 — autoscaling / routing
+QUEUE_PRESSURE_THRESHOLD: float = float(os.environ.get("QUEUE_PRESSURE_THRESHOLD", "5"))
+HPA_QUEUE_DEPTH_TARGET: float = float(os.environ.get("HPA_QUEUE_DEPTH_TARGET", "5"))
+GPU_METRICS_INTERVAL_S: float = float(os.environ.get("GPU_METRICS_INTERVAL_S", "5"))
+
+# Phase 3 — SLA-aware priority scheduling (disable for FIFO baseline benchmarks)
+PRIORITY_SCHEDULING: bool = os.environ.get("PRIORITY_SCHEDULING", "1").lower() in ("1", "true", "yes")
+
 
 def set_generative(enabled: bool) -> None:
     """Override generative mode at runtime (used by tests)."""

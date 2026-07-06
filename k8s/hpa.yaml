@@ -1,9 +1,10 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: resilient-inference-server-hpa
+  name: resilient-inference-server-ondemand-hpa
   labels:
     app: resilient-inference-server
+    node-pool: ondemand
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -12,11 +13,54 @@ spec:
   minReplicas: 1
   maxReplicas: 5
   metrics:
-    # Placeholder — Phase 7 will replace CPU target with custom Prometheus
-    # metrics (queue_depth, active_slots_used, request_latency_seconds).
-    - type: Resource
-      resource:
-        name: cpu
+    # Requires prometheus-adapter (see k8s/prometheus-adapter/README.md).
+    # Scale out when average queue_depth per pod exceeds 5.
+    - type: Pods
+      pods:
+        metric:
+          name: queue_depth
         target:
-          type: Utilization
-          averageUtilization: 70
+          type: AverageValue
+          averageValue: "5"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: resilient-inference-server-spot-hpa
+  labels:
+    app: resilient-inference-server
+    node-pool: spot
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: resilient-inference-server-spot
+  minReplicas: 0
+  maxReplicas: 10
+  metrics:
+    - type: Pods
+      pods:
+        metric:
+          name: queue_depth
+        target:
+          type: AverageValue
+          averageValue: "5"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+    scaleDown:
+      stabilizationWindowSeconds: 120

@@ -20,6 +20,11 @@ queue_depth = Gauge(
     "Current number of requests waiting in the queue",
 )
 
+gpu_utilization_percent = Gauge(
+    "gpu_utilization_percent",
+    "Average GPU utilization percentage from nvidia-smi (0 on CPU-only nodes)",
+)
+
 active_slots_used = Gauge(
     "active_slots_used",
     "Number of slot-pool entries currently running a generative sequence",

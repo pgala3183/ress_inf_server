@@ -16,6 +16,10 @@ spec:
       labels:
         app: resilient-inference-server
         node-pool: ondemand
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
     spec:
       # Schedule onto the standard (non-Spot) node pool.
       nodeSelector:

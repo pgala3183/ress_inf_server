@@ -33,8 +33,11 @@ Write-Host "Loading image into kind..."
 kind load docker-image resilient-inference-server:latest --name $ClusterName
 
 Write-Host "Applying manifests..."
-kubectl apply -f k8s/deployment-ondemand.yaml `
+kubectl apply -f k8s/service-ondemand.yaml `
+               -f k8s/service-spot.yaml `
+               -f k8s/deployment-ondemand.yaml `
                -f k8s/deployment-spot.yaml `
+               -f k8s/deployment-router.yaml `
                -f k8s/service.yaml `
                -f k8s/hpa.yaml
 
@@ -42,6 +45,9 @@ Write-Host "Waiting for pods..."
 kubectl wait --for=condition=ready pod `
     -l app=resilient-inference-server `
     --timeout=180s
+kubectl wait --for=condition=ready pod `
+    -l app=resilient-inference-router `
+    --timeout=120s
 
 kubectl get pods -o wide
 kubectl get svc resilient-inference-server

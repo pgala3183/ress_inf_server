@@ -16,6 +16,10 @@ spec:
       labels:
         app: resilient-inference-server
         node-pool: spot
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
     spec:
       nodeSelector:
         cloud.google.com/gke-spot: "true"
@@ -44,7 +48,7 @@ spec:
             # Comma-separated peer base URLs for queue migration during drain.
             # Example: http://resilient-inference-server/resilient-inference-server-ondemand:80
             - name: PEER_URLS
-              value: "http://resilient-inference-server"
+              value: "http://resilient-inference-server-ondemand"
             # Demo locally without GCE metadata (unset in production):
             # - name: SIMULATE_PREEMPTION_AFTER_SECONDS
             #   value: "120"

@@ -17,6 +17,7 @@ from starlette.responses import Response
 from server.batching_scheduler import BatchingScheduler
 from server.config import DEFAULT_MAX_TOKENS, DRAIN_RETRY_AFTER_SECONDS, GENERATIVE
 from server.drain_state import DrainManager, DrainState
+from server.gpu_metrics import gpu_metrics_loop
 from server.metrics import queue_depth, render_metrics, request_latency_seconds
 from server.model_worker import ModelWorker
 from server.peer_forwarder import PeerForwarder
@@ -57,6 +58,7 @@ def create_app(generative: bool | None = None) -> FastAPI:
     drain_manager = DrainManager()
     peer_forwarder = PeerForwarder()
     preemption_listener: PreemptionListener | None = None
+    gpu_metrics_task: asyncio.Task[None] | None = None
 
     def _shutdown_after_drain() -> None:
         """Exit cleanly once drain completes (Spot preStop / simulation demo path)."""
@@ -65,7 +67,7 @@ def create_app(generative: bool | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        nonlocal request_queue, batching_scheduler, preemption_listener
+        nonlocal request_queue, batching_scheduler, preemption_listener, gpu_metrics_task
         configure_drain_logging()
         request_queue = RequestQueue()
         batching_scheduler = BatchingScheduler(
@@ -87,9 +89,16 @@ def create_app(generative: bool | None = None) -> FastAPI:
         await model_worker.load()
         await batching_scheduler.start()
         await preemption_listener.start()
+        gpu_metrics_task = asyncio.create_task(gpu_metrics_loop(), name="gpu-metrics")
         try:
             yield
         finally:
+            if gpu_metrics_task is not None:
+                gpu_metrics_task.cancel()
+                try:
+                    await gpu_metrics_task
+                except asyncio.CancelledError:
+                    pass
             if preemption_listener is not None:
                 await preemption_listener.stop()
             if batching_scheduler is not None:
@@ -97,6 +106,7 @@ def create_app(generative: bool | None = None) -> FastAPI:
             request_queue = None
             batching_scheduler = None
             preemption_listener = None
+            gpu_metrics_task = None
 
     app = FastAPI(title="Resilient Inference Server", lifespan=lifespan)
 

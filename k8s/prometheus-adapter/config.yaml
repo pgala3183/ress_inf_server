@@ -1,0 +1,36 @@
+# Prometheus Adapter rule mapping: scrape queue_depth from inference pods
+# into the custom.metrics.k8s.io API for HPA v2 Pods metrics.
+#
+# Install adapter + apply this ConfigMap, then verify:
+#   kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/default/pods/*/queue_depth"
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-adapter-config
+  namespace: custom-metrics
+data:
+  config.yaml: |
+    rules:
+      custom:
+        - seriesQuery: 'queue_depth{namespace!="",pod!=""}'
+          resources:
+            overrides:
+              namespace:
+                resource: namespace
+              pod:
+                resource: pod
+          name:
+            matches: "^queue_depth"
+            as: "queue_depth"
+          metricsQuery: sum(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)
+        - seriesQuery: 'gpu_utilization_percent{namespace!="",pod!=""}'
+          resources:
+            overrides:
+              namespace:
+                resource: namespace
+              pod:
+                resource: pod
+          name:
+            matches: "^gpu_utilization_percent"
+            as: "gpu_utilization_percent"
+          metricsQuery: avg(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)
